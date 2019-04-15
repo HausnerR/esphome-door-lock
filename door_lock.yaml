@@ -16,8 +16,8 @@ custom_component:
   id: rfid_component
 
 wifi:
-  ssid: ''
-  password: ''
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
   id: wifi
 
 # Enable logging
@@ -25,11 +25,11 @@ logger:
 
 # Enable OTA updates
 ota:
-  password: ''
+  password: !secret ota_password
 
 # Enable Home Assistant API
 api:
-  password: ''
+  password: !secret api_password
   id: api
 
   services:
