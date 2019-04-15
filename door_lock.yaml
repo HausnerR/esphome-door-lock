@@ -1,0 +1,90 @@
+esphome:
+  name: door_lock
+  platform: ESP8266
+  board: d1_mini
+  includes:
+  - door_lock_rfid.h
+  libraries:
+  - "ESP8266HTTPClient"
+  - "SPI"
+  - "MFRC522"
+
+custom_component:
+- lambda: |-
+    auto component = new RfidSensorsComponent();
+    return { component };
+  id: rfid_component
+
+wifi:
+  ssid: ''
+  password: ''
+  id: wifi
+
+# Enable logging
+logger:
+
+# Enable OTA updates
+ota:
+  password: ''
+
+# Enable Home Assistant API
+api:
+  password: ''
+  id: api
+
+  services:
+    - service: print_users_list
+      then:
+        lambda: |-
+          auto component_id = id(rfid_component);
+          RfidSensorsComponent* component = ((RfidSensorsComponent*) (component_id.get_component(0)));
+          component->send_users_list_notification();
+
+    - service: sync_users_list_from_server
+      variables:
+        url: string
+      then:
+        lambda: |-
+          auto component_id = id(rfid_component);
+          RfidSensorsComponent* component = ((RfidSensorsComponent*) (component_id.get_component(0)));
+          component->sync_users_list_from_server(url);
+
+binary_sensor:
+- platform: custom
+  lambda: |-
+    auto component_id = id(rfid_component);
+    RfidSensorsComponent* component = ((RfidSensorsComponent*) (component_id.get_component(0)));
+    return { component->valid_tag_sensor, component->invalid_tag_sensor };
+  binary_sensors:
+  - name: "Valid tag"
+    on_press:
+      switch.turn_on: door_lock
+  - name: "Invalid tag"
+
+text_sensor:
+- platform: custom
+  lambda: |-
+    auto component_id = id(rfid_component);
+    RfidSensorsComponent* component = ((RfidSensorsComponent*) (component_id.get_component(0)));
+    return { component->last_tag_id_sensor, component->last_tag_description_sensor };
+  text_sensors:
+  - name: "Last tag ID"
+    icon: "mdi:card-bulleted-outline"
+  - name: "Last tag description"
+    icon: "mdi:card-bulleted-outline"
+
+status_led:
+  pin:
+    number: D4 # GPIO2 pin
+    inverted: true
+
+switch:
+  - platform: gpio
+    pin: D0 # GPIO16 pin
+    restore_mode: ALWAYS_OFF
+    id: door_lock
+    name: "Door lock"
+    icon: "mdi:lock-outline"
+    on_turn_on:
+    - delay: 5s
+    - switch.turn_off: door_lock
