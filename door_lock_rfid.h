@@ -8,8 +8,6 @@
  */
 
 #include "esphome.h"
-#include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
 #include <FS.h>
 #include <SPI.h>
 #include <MFRC522.h>
@@ -30,28 +28,54 @@ class RfidSensorsComponent : public Component {
 
   unsigned long last_tag_read_milis = 0;
 
+  //https://www.esphome.io/api/custom__api__device_8h_source.html
   void send_notification(String title, String message, String notification_id) {
-    vector<api::KeyValuePair> data;
-    data.push_back(api::KeyValuePair("title", title.c_str()));
-    data.push_back(api::KeyValuePair("message", message.c_str()));
-    data.push_back(api::KeyValuePair("notification_id", notification_id.c_str()));
+    api::HomeassistantServiceResponse resp;
+    resp.service = "persistent_notification.create";
 
-    api::ServiceCallResponse resp;
-    resp.set_service("persistent_notification.create");
-    resp.set_data(data);
-    api::global_api_server->send_service_call(resp);
+    HomeassistantServiceMap kv1;
+    kv1.key = "title";
+    kv1.value = title.c_str();
+    resp.data.push_back(kv1);
+
+    HomeassistantServiceMap kv2;
+    kv2.key = "message";
+    kv2.value = message.c_str();
+    resp.data.push_back(kv2);
+
+    HomeassistantServiceMap kv3;
+    kv3.key = "notification_id";
+    kv3.value = notification_id.c_str();
+    resp.data.push_back(kv3);
+
+    api::global_api_server->send_homeassistant_service_call(resp);
   }
 
-  void import_users_list(Stream* f) {
+  void send_event(String name) {
+    api::HomeassistantServiceResponse resp;
+    resp.service = name.c_str();
+    resp.is_event = true;
+    api::global_api_server->send_homeassistant_service_call(resp);
+  }
+
+  bool load_users_list() {
+    ESP_LOGD("rfid", "Loading users list from file...");
+    File f = SPIFFS.open("/rfid_users_list.db", "r");
+
+    if (!f) {
+      ESP_LOGE("rfid", "Failed to open users list file!");
+      return false;
+    }
+
     ESP_LOGD("rfid", "Parsing users list...");
 
     users_list.clear();
 
-    while (f->available()) {
+    while (f.available()) {
       String line;
       char tmp = 0;
-      while (f->available() && tmp != '\n'){
-        tmp = f->read();
+      while (f.available() && tmp != '\n'){
+        tmp = f.read();
         line += tmp;
       }
 
@@ -66,18 +90,6 @@ class RfidSensorsComponent : public Component {
         users_list.push_back(row);
       }
     }
-  }
-
-  bool load_users_list() {
-    ESP_LOGD("rfid", "Loading users list from file...");
-    File f = SPIFFS.open("/rfid_users_list", "r");
-
-    if (!f) {
-      ESP_LOGE("rfid", "Failed to open users list file!");
-      return false;
-    }
-
-    import_users_list(&f);
 
     f.close();
 
@@ -86,7 +98,7 @@ class RfidSensorsComponent : public Component {
 
   bool save_users_list() {
     ESP_LOGD("rfid", "Saving users list to file...");
-    File f = SPIFFS.open("/rfid_users_list", "w");
+    File f = SPIFFS.open("/rfid_users_list.db", "w");
 
     if (!f) {
       ESP_LOGE("rfid", "Failed to open users list file!");
@@ -147,36 +159,35 @@ class RfidSensorsComponent : public Component {
   text_sensor::TextSensor *last_tag_description_sensor = new text_sensor::TextSensor();
 
   void send_users_list_notification() {
+    bool first = true;
     String message;
-    for (auto &user : users_list) {
-      message += user.id + " - " + user.description + '\n';
+    message += "{\"list\":[\n";
+    if (users_list.size() == 0) {
+      message += "\"XX:XX:XX:XX=Example 1\",\n\"XX:XX:XX:XX=Example 2\"";
     }
+    for (auto &user : users_list) {
+      if (!first) message += ",\n";
+      first = false;
+      message += "\"" + user.id + "=" + user.description + "\"";
+    }
+    message += "\n]}";
 
     send_notification((App.get_name() + ": users list").c_str(), message, (App.get_name() + "_users_list_print").c_str());
   }
 
-  void sync_users_list_from_server(string users_server_url) {
-    if (WiFi.status() != WL_CONNECTED) return;
-    if (users_server_url.length() == 0) return;
+  void upload_users_list(vector<string> list) {
+    users_list.clear();
 
-    String title = (App.get_name() + ": users list update").c_str();
-    String id = (App.get_name() + "_users_list_update").c_str();
+    for (auto &line : list) {
+      size_t split_pos = line.find('=');
 
-    ESP_LOGD("rfid", "Fetching users list from server...");
-
-    HTTPClient http;
-    http.begin(users_server_url.c_str());
-    int httpCode = http.GET();
-
-    if (httpCode == 200) {
-      import_users_list(http.getStreamPtr());
-    } else {
-      ESP_LOGE("rfid", "Invalid server response. Server unavailable?");
-      send_notification(title, "Invalid server response. Server unavailable?", id);
-      return;
+      if (split_pos == 11) { //Naive ID check: XX:XX:XX:XX=DESCRIPTION
+        user row;
+        row.id = line.substr(0, split_pos).c_str();
+        row.description = line.substr(split_pos + 1).c_str();
+        users_list.push_back(row);
+      }
     }
-
-    http.end();
 
     save_users_list();
     send_users_list_notification();

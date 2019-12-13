@@ -8,6 +8,9 @@ esphome:
   - "ESP8266HTTPClient"
   - "SPI"
   - "MFRC522"
+  # Need to override -Wl,-T - the only way is by setting all build_flags
+  platformio_options:
+    build_flags: -DESPHOME_LOG_LEVEL=ESPHOME_LOG_LEVEL_DEBUG -DUSE_STORE_LOG_STR_IN_FLASH -Wl,-Teagle.flash.4m1m.ld -fno-exceptions
 
 custom_component:
 - lambda: |-
@@ -18,7 +21,10 @@ custom_component:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  id: wifi
+  manual_ip:
+    static_ip: 192.168.77.247
+    gateway: 192.168.77.2
+    subnet: 255.255.255.0
 
 # Enable logging
 logger:
@@ -30,7 +36,6 @@ ota:
 # Enable Home Assistant API
 api:
   password: !secret api_password
-  id: api
 
   services:
     - service: print_users_list
@@ -40,14 +45,14 @@ api:
           RfidSensorsComponent* component = ((RfidSensorsComponent*) (component_id.get_component(0)));
           component->send_users_list_notification();
 
-    - service: sync_users_list_from_server
+    - service: upload_users_list
       variables:
-        url: string
+        list: string[]
       then:
         lambda: |-
           auto component_id = id(rfid_component);
           RfidSensorsComponent* component = ((RfidSensorsComponent*) (component_id.get_component(0)));
-          component->sync_users_list_from_server(url);
+          component->upload_users_list(list);
 
 binary_sensor:
 - platform: custom

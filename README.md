@@ -14,12 +14,24 @@ PCB project and component list is available here and on easyeda if you want to o
 
 Project contains:
  - door_lock.yaml - ESPHome configuration file. It defines all sensors, services and door lock switch for firmware,
- - door_lock_rfid.h - ESPHome custom component. It exposes data read by RC522 as sensors and verify if tag is from allowed list. List can be viewed and updated using services,
+ - door_lock_rfid.h - ESPHome custom component. It exposes data read by RC522 as sensors and verify if tag is from allowed list. List can be viewed and updated using Home Assistant services,
  - pcb - components list and gerber files for PCB etching.
 
 # Updating users list
 
-To update users list you need to expose `users list file` on any HTTP server. Simplest way is to use built-in HA server. Create directory `www` inside your HA config dir and put there your `users list file`.
-It will be available at http://HA:8123/local/filename.
+In Home Assistant door_lock exposes two services:
+ - `print_users_list` - gets users list from device and shows it as notification with JSON format prepared for `upload_users_list`,
+ - `upload_users_list` - gets JSON as parameter (same as `print_users_list` returns), and saves users in door_lock.
 
-Then through Home Assistant execute service `esphome.door_lock_sync_users_list_from_server` and send service data like: `{"url":"http://HA:8123/local/filename"}`.
+When users list is empty, door_lock returns example JSON:
+
+```
+{"list":[
+"XX:XX:XX:XX=Example 1",
+"XX:XX:XX:XX=Example 2"
+]}
+```
+
+# SPIFFS info
+
+ESPhome project removed SPIFFs reserved area from default build flags, but it's required in this project. That's why YAML file have all build_flags set explicitly (without disable warnings flag).
